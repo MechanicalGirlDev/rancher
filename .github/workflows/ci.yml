@@ -21,7 +21,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo build --locked
-          cargo install reiny-cli --version 0.5.0 --locked
+          cargo install reiny-cli --version 0.6.0 --locked
           cargo install --git https://github.com/MechanicalGirlDev/sutera --rev 48692200c5d797644e6d0688135613e0810bc1b8 sutera-runtime --locked --debug --bins --features launch --root out/bundle
           mkdir -p out/bundle/projects/diffdrive
           cp target/debug/reiny-launcher out/bundle/reiny-launcher
