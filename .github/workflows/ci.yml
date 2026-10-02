@@ -17,3 +17,42 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - run: cargo test --workspace --all-features
+      - name: Build real runtime bundle
+        run: |
+          set -euo pipefail
+          cargo build --locked
+          cargo install reiny-cli --version 0.5.0 --locked
+          cargo install --git https://github.com/MechanicalGirlDev/sutera --rev 48692200c5d797644e6d0688135613e0810bc1b8 sutera-runtime --locked --debug --bins --features launch --root out/bundle
+          mkdir -p out/bundle/projects/diffdrive
+          cp target/debug/reiny-launcher out/bundle/reiny-launcher
+          cp "$(command -v reiny)" out/bundle/reiny
+          cp tests/fixtures/diffdrive/* out/bundle/projects/diffdrive/
+      - name: Explicit launch with real reiny and Sutera
+        run: |
+          set -euo pipefail
+          timeout --kill-after=5s 60s out/bundle/reiny-launcher diffdrive > out/launcher-smoke.log 2>&1
+          python3 -c '
+          from pathlib import Path
+          trace = Path("out/bundle/projects/diffdrive/diffdrive-stop.txt")
+          values = dict(item.split("=", 1) for item in trace.read_text().split())
+          assert float(values["x"]) > 0, values
+          assert float(values["left"]) == float(values["right"]) == 0, values
+          print(trace.read_text())
+          '
+          if pgrep -f 'out/bundle/bin/sutera-' ; then
+            echo 'A Sutera child remained after launcher exit' >&2
+            exit 1
+          fi
+          cp out/bundle/projects/diffdrive/diffdrive-stop.txt out/launcher-stop.txt
+      - name: Upload real launcher evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-runtime-evidence
+          path: |
+            out/launcher-smoke.log
+            out/launcher-stop.txt
+          if-no-files-found: warn
+      - name: Remove owned scratch bundle
+        if: always()
+        run: rm -rf out/bundle
