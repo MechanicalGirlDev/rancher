@@ -1,0 +1,30 @@
+[package]
+name = "reiny-launcher"
+version = "0.1.4"
+edition = "2024"
+license = "Apache-2.0"
+authors = ["nop <noplab90@gmail.com>"]
+repository = "https://github.com/MechanicalGirlDev/reiny-launcher"
+description = "Bundle entry point: one argument-free executable that starts the launch config beside it"
+
+[[bin]]
+name = "reiny-launcher"
+path = "src/main.rs"
+
+[dependencies]
+velopack = "1.2"
+
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "deny"
+missing_debug_implementations = "warn"
+unused_import_braces = "warn"
+unused_qualifications = "warn"
+unused_results = "warn"
+variant_size_differences = "warn"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+std_instead_of_core = "warn"
+std_instead_of_alloc = "warn"
