@@ -488,7 +488,7 @@ mod tests {
 
     /// Create a bundle-like directory for tests (projects under `projects/`).
     fn bundle(tag: &str, projects: &[&str]) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("reiny-launcher-{tag}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("rancher-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         for p in projects {

@@ -24,13 +24,13 @@ jobs:
           cargo install reiny-cli --version 0.6.0 --locked
           cargo install --git https://github.com/MechanicalGirlDev/sutera --rev 48692200c5d797644e6d0688135613e0810bc1b8 sutera-runtime --locked --debug --bins --features launch --root out/bundle
           mkdir -p out/bundle/projects/diffdrive
-          cp target/debug/reiny-launcher out/bundle/reiny-launcher
+          cp target/debug/rancher out/bundle/rancher
           cp "$(command -v reiny)" out/bundle/reiny
           cp tests/fixtures/diffdrive/* out/bundle/projects/diffdrive/
       - name: Explicit launch with real reiny and Sutera
         run: |
           set -euo pipefail
-          timeout --kill-after=5s 60s out/bundle/reiny-launcher diffdrive > out/launcher-smoke.log 2>&1
+          timeout --kill-after=5s 60s out/bundle/rancher diffdrive > out/launcher-smoke.log 2>&1
           python3 -c '
           from pathlib import Path
           trace = Path("out/bundle/projects/diffdrive/diffdrive-stop.txt")

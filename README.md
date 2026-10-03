@@ -1,4 +1,4 @@
-# reiny-launcher
+# rancher
 
 Argument-free bundle entry point. It selects a launch config beside the executable and runs
 `reiny run <launch.yaml> --bin-dir bin`, with Velopack install/update hooks at the start of `main`.
@@ -11,10 +11,10 @@ MechanicalGirlDev/humanoid-system.
 
 ```sh
 cargo build --release --locked
-cargo install --locked --git https://github.com/MechanicalGirlDev/reiny-launcher reiny-launcher
+cargo install --locked --git https://github.com/MechanicalGirlDev/rancher rancher
 ```
 
-The package and binary are both named `reiny-launcher`. Rename the binary to the bundle name
+The package and binary are both named `rancher`. Rename the binary to the bundle name
 (for example `<name>.exe`) when staging a bundle.
 
 ## Bundle layout
@@ -49,13 +49,13 @@ Run on a scratch bundle directory containing the built binary:
 mkdir -p bundle/projects/a_sim bundle/projects/b_real bundle/bin
 printf 'launch:\n' > bundle/projects/a_sim/launch.yaml
 printf 'launch:\n' > bundle/projects/b_real/launch.yaml
-cp target/release/reiny-launcher bundle/reiny-launcher
+cp target/release/rancher bundle/rancher
 # a fake reiny that prints its arguments
 printf '#!/bin/sh\necho "reiny $@"\n' > bundle/reiny && chmod +x bundle/reiny
 cd bundle
-./reiny-launcher b_real --log-level debug   # expect: reiny run .../projects/b_real/launch.yaml --bin-dir .../bin --log-level debug
-./reiny-launcher projects/a_sim/launch.yaml # expect: a_sim selected by bundle-relative path
-./reiny-launcher </dev/null                 # expect: menu, default (first entry) launched on EOF
+./rancher b_real --log-level debug   # expect: reiny run .../projects/b_real/launch.yaml --bin-dir .../bin --log-level debug
+./rancher projects/a_sim/launch.yaml # expect: a_sim selected by bundle-relative path
+./rancher </dev/null                 # expect: menu, default (first entry) launched on EOF
 ```
 
 ## Verify

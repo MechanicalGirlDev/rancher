@@ -1,14 +1,14 @@
 [package]
-name = "reiny-launcher"
+name = "rancher"
 version = "0.1.4"
 edition = "2024"
 license = "Apache-2.0"
 authors = ["nop <noplab90@gmail.com>"]
-repository = "https://github.com/MechanicalGirlDev/reiny-launcher"
+repository = "https://github.com/MechanicalGirlDev/rancher"
 description = "Bundle entry point: one argument-free executable that starts the launch config beside it"
 
 [[bin]]
-name = "reiny-launcher"
+name = "rancher"
 path = "src/main.rs"
 
 [dependencies]
