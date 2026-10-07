@@ -1,0 +1,5 @@
+version: 1
+run:
+  provider: process
+  bin: sutera-launch
+  config: ../sutera.toml

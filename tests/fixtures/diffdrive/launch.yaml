@@ -1,5 +1,0 @@
-launch:
-  sutera-launch:
-    config: "sutera.toml"
-    args: ["--tick-limit", "6"]
-    on_exit: "shutdown_all"

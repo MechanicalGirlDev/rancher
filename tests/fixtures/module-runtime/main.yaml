@@ -1,0 +1,8 @@
+version: 1
+deployment: rancher-module-qa
+providers:
+  process:
+    type: process
+modules:
+  worker:
+    source: worker

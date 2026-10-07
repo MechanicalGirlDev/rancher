@@ -1,0 +1,22 @@
+[package]
+name = "rancher-module-runtime"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+anyhow = "1"
+reiny = "0.7.0"
+reiny-launch = "0.7.0"
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "time"] }
+
+[[bin]]
+name = "rancher-module-smoke"
+path = "src/module.rs"
+
+[[bin]]
+name = "rancher-module-qa"
+path = "src/qa.rs"

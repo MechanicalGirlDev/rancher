@@ -1,0 +1,8 @@
+version: 1
+deployment: rancher-diffdrive
+providers:
+  process:
+    type: process
+modules:
+  supervisor:
+    source: supervisor

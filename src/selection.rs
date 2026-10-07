@@ -91,8 +91,8 @@ mod tests {
 
     fn entries() -> Vec<Entry> {
         [
-            "projects/robot_v1.1/launch.yaml",
-            "experiments/probe/projects/robot_v1.1/launch.yaml",
+            "projects/robot_v1.1/main.yaml",
+            "experiments/probe/projects/robot_v1.1/main.yaml",
         ]
         .into_iter()
         .map(|id| Entry {

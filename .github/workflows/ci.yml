@@ -13,37 +13,51 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.97'
-          components: clippy
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-      - run: cargo test --workspace --all-features
-      - name: Build real runtime bundle
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - run: cargo test --locked --workspace --all-features
+      - name: Check the independent managed SDK fixture
+        run: |
+          cargo fmt --manifest-path tests/fixtures/module-runtime/Cargo.toml --all --check
+          cargo clippy --manifest-path tests/fixtures/module-runtime/Cargo.toml --locked --all-targets -- -D warnings
+      - name: Build real managed module bundle
         run: |
           set -euo pipefail
           cargo build --locked
-          cargo install reiny-cli --version 0.6.0 --locked
-          cargo install --git https://github.com/MechanicalGirlDev/sutera --rev 48692200c5d797644e6d0688135613e0810bc1b8 sutera-runtime --locked --debug --bins --features launch --root out/bundle
-          mkdir -p out/bundle/projects/diffdrive
+          cargo install reiny-cli --version 0.7.0 --locked
+          cargo install --path tests/fixtures/module-runtime --locked --debug --bins --root out/bundle
+          mkdir -p out/bundle/projects/managed/worker
           cp target/debug/rancher out/bundle/rancher
           cp "$(command -v reiny)" out/bundle/reiny
-          cp tests/fixtures/diffdrive/* out/bundle/projects/diffdrive/
-      - name: Explicit launch with real reiny and Sutera
+          cp tests/fixtures/module-runtime/main.yaml out/bundle/projects/managed/
+          cp tests/fixtures/module-runtime/worker/main.yaml out/bundle/projects/managed/worker/
+      - name: Real Reiny 0.7 readiness and cooperative cleanup
         run: |
           set -euo pipefail
-          timeout --kill-after=5s 60s out/bundle/rancher diffdrive > out/launcher-smoke.log 2>&1
+          out/bundle/bin/rancher-module-qa out/bundle | tee out/launcher-smoke.log
+          cp out/bundle/projects/managed/stopped.txt out/launcher-stop.txt
+      - name: Preserve real standalone Sutera safety evidence
+        run: |
+          set -euo pipefail
+          cargo install --git https://github.com/MechanicalGirlDev/sutera --rev 48692200c5d797644e6d0688135613e0810bc1b8 sutera-runtime --locked --debug --bins --root out/sutera
+          mkdir -p out/sutera/projects/diffdrive
+          cp tests/fixtures/diffdrive/sutera.toml out/sutera/projects/diffdrive/
+          timeout --kill-after=5s 60s out/sutera/bin/sutera out/sutera/projects/diffdrive/sutera.toml 6 > out/supervisor-smoke.log 2>&1
           python3 -c '
           from pathlib import Path
-          trace = Path("out/bundle/projects/diffdrive/diffdrive-stop.txt")
+          trace = Path("out/sutera/projects/diffdrive/diffdrive-stop.txt")
           values = dict(item.split("=", 1) for item in trace.read_text().split())
           assert float(values["x"]) > 0, values
           assert float(values["left"]) == float(values["right"]) == 0, values
           print(trace.read_text())
           '
-          if pgrep -f 'out/bundle/bin/sutera-' ; then
+          if pgrep -f 'out/sutera/bin/sutera-' ; then
             echo 'A Sutera child remained after launcher exit' >&2
             exit 1
           fi
-          cp out/bundle/projects/diffdrive/diffdrive-stop.txt out/launcher-stop.txt
+          cp out/sutera/projects/diffdrive/diffdrive-stop.txt out/supervisor-stop.txt
       - name: Upload real launcher evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -52,7 +66,9 @@ jobs:
           path: |
             out/launcher-smoke.log
             out/launcher-stop.txt
+            out/supervisor-smoke.log
+            out/supervisor-stop.txt
           if-no-files-found: warn
       - name: Remove owned scratch bundle
         if: always()
-        run: rm -rf out/bundle
+        run: rm -rf out/bundle out/sutera

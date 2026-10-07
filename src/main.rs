@@ -1,16 +1,16 @@
 //! Double-click entry point for a bundle (a single exe, renamed to `<name>` when distributed).
 //!
-//! The real work of a bundle is `reiny run <launch config> --bin-dir bin`, but installer
+//! The real work of a bundle is `reiny run <main.yaml> --bin-dir bin`, but installer
 //! shortcuts and Velopack can only point at **one argument-free exe**. Velopack also
 //! requires its hook to run at the **very start** of `main`, and the only other `main` in
 //! the bundle belongs to reiny (a crate we do not own). Those two constraints are the whole
 //! reason this thin shim exists: it is the single entry for install/update and launch selection.
 //!
-//! A bundle has the same shape as the repository, so everything launchable is every
-//! `projects/<name>/launch.yaml` (a **project**) beside the executable. Projects can be
-//! duplicated and deleted from this screen. A project is self-contained in one directory and
-//! every relative path inside it is based on that directory, so duplication is a pure
-//! recursive copy that never rewrites a path.
+//! A bundle can have an adjacent `main.yaml` and selectable
+//! `projects/<name>/main.yaml` deployments. Projects can be
+//! duplicated and deleted from this screen. Duplication preserves relative paths, assigns
+//! a new deployment identity and excludes the original owner's `.reiny` runtime state.
+//! Deletion stops an active owner through Reiny's authenticated control channel first.
 //!
 //! Which launch runs is chosen by an argument (`<name> my_test`) or, without one, by number.
 //! The default is `default.launch`, which identifies a bundle-relative config path (or a
@@ -58,9 +58,8 @@ const DEFAULT_LAUNCH_FILE: &str = "default.launch";
 const PROJECTS_DIR: &str = "projects";
 
 /// Launch config inside a project directory. The **fixed name** is the point: the directory
-/// carries the name, and since the contents do not depend on the file name, a directory
-/// duplicates without renaming or rewriting.
-const PROJECT_LAUNCH: &str = "launch.yaml";
+/// carries the name. Duplication rewrites the deployment identity, not relative paths.
+const PROJECT_LAUNCH: &str = "main.yaml";
 
 fn main() -> ExitCode {
     // Velopack may exit or restart this process for install/update/uninstall hooks, so it
@@ -87,9 +86,12 @@ fn launch() -> Result<ExitCode, String> {
     // Update before launching. Applying an update restarts this process, so it never returns.
     update(dir);
 
-    let default = std::fs::read_to_string(dir.join(DEFAULT_LAUNCH_FILE))
+    let mut default = std::fs::read_to_string(dir.join(DEFAULT_LAUNCH_FILE))
         .map(|s| s.trim().to_string())
         .unwrap_or_default();
+    if default.is_empty() && dir.join(PROJECT_LAUNCH).is_file() {
+        default = PROJECT_LAUNCH.to_owned();
+    }
     let mut args: Vec<OsString> = std::env::args_os().skip(1).collect();
     let config = pick_config(dir, &default, &mut args)?;
     let bindir = dir.join("bin");
@@ -117,7 +119,7 @@ fn launch() -> Result<ExitCode, String> {
 
 // ---- Launchable entries -----------------------------------------------------
 
-/// One launchable entry (`projects/<name>/launch.yaml`).
+/// One launchable entry (`projects/<name>/main.yaml`).
 struct Entry {
     /// Bundle-relative identity, distinct from the display name.
     id: PathBuf,
@@ -137,7 +139,7 @@ fn sorted_entries(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// Launchable entries (`projects/*/launch.yaml`), sorted by name.
+/// The bundle root and project deployments, sorted by name.
 fn list_entries(root: &Path) -> Vec<Entry> {
     let mut dirs = sorted_entries(&root.join(PROJECTS_DIR));
     // Only explicitly bundled experiments are present here; normal bundles contain projects only.
@@ -162,6 +164,18 @@ fn list_entries(root: &Path) -> Vec<Entry> {
         })
         .filter(|e| e.path.is_file())
         .collect();
+    let manifest = root.join(PROJECT_LAUNCH);
+    if manifest.is_file() {
+        entries.push(Entry {
+            id: PROJECT_LAUNCH.into(),
+            name: root
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+            path: manifest,
+        });
+    }
     entries.sort_by(|a, b| a.name.cmp(&b.name));
     entries
 }
@@ -194,7 +208,7 @@ fn pick_config(root: &Path, default: &str, args: &mut Vec<OsString>) -> Result<P
     if entries.is_empty() {
         return Err(format!(
             "No launch config found: {}\n\
-             (this executable selects what to launch from the adjacent {PROJECTS_DIR}/*/{PROJECT_LAUNCH})",
+             (expected {PROJECT_LAUNCH} or {PROJECTS_DIR}/*/{PROJECT_LAUNCH} beside this executable)",
             root.display()
         ));
     }
@@ -266,6 +280,10 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
+        // Owner credentials, process observations and build caches are not project inputs.
+        if entry.file_name() == ".reiny" {
+            continue;
+        }
         let (from, to) = (entry.path(), dst.join(entry.file_name()));
         if entry.file_type()?.is_dir() {
             copy_dir_all(&from, &to)?;
@@ -278,8 +296,7 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
 
 /// Create `projects/<name>/` from `src` and return that directory.
 ///
-/// The directory is duplicated as is: relative paths inside it are based only on its own
-/// directory, so not a single character is rewritten.
+/// Relative paths remain unchanged; only the root deployment identity is replaced.
 fn create_project(root: &Path, src: &Entry, name: &str) -> Result<PathBuf, String> {
     if !valid_name(name) {
         return Err(format!(
@@ -301,14 +318,28 @@ fn create_project(root: &Path, src: &Entry, name: &str) -> Result<PathBuf, Strin
         .path
         .parent()
         .ok_or_else(|| format!("The source has no directory: {}", src.path.display()))?;
-
+    let bytes =
+        std::fs::read(&src.path).map_err(|e| format!("Cannot read {}: {e}", src.path.display()))?;
+    let mut manifest: reiny_launch::ModuleManifest = serde_yaml::from_slice(&bytes)
+        .map_err(|e| format!("Invalid project manifest {}: {e}", src.path.display()))?;
+    if manifest.deployment.is_none() {
+        return Err("A project main.yaml must declare its deployment identity".into());
+    }
+    manifest.deployment = Some(name.to_owned());
+    let serialized = serde_yaml::to_string(&manifest)
+        .map_err(|e| format!("Cannot serialize the duplicated deployment: {e}"))?;
     copy_dir_all(from, &dir).map_err(|e| format!("Cannot duplicate: {e}"))?;
+    std::fs::write(dir.join(PROJECT_LAUNCH), serialized)
+        .map_err(|e| format!("Cannot write the duplicated deployment: {e}"))?;
     Ok(dir)
 }
 
 /// Pick a source and create `projects/<name>/` from it.
 fn new_project(root: &Path, entries: &[Entry]) -> Result<(), String> {
-    let all: Vec<&Entry> = entries.iter().collect();
+    let all: Vec<&Entry> = entries
+        .iter()
+        .filter(|entry| entry.id != Path::new(PROJECT_LAUNCH))
+        .collect();
     let Some(src) = choose("Choose a project to duplicate:", &all) else {
         return Ok(());
     };
@@ -322,7 +353,10 @@ fn new_project(root: &Path, entries: &[Entry]) -> Result<(), String> {
 
 /// Pick a project and delete its whole directory (with confirmation).
 fn delete_project(entries: &[Entry]) -> Result<(), String> {
-    let all: Vec<&Entry> = entries.iter().collect();
+    let all: Vec<&Entry> = entries
+        .iter()
+        .filter(|entry| entry.id != Path::new(PROJECT_LAUNCH))
+        .collect();
     let Some(target) = choose("Choose a project to delete:", &all) else {
         return Ok(());
     };
@@ -332,6 +366,13 @@ fn delete_project(entries: &[Entry]) -> Result<(), String> {
         .ok_or_else(|| format!("No directory: {}", target.path.display()))?;
     if !confirm(&format!("Delete {}. Are you sure?", dir.display())) {
         return Ok(());
+    }
+    if let Some(owner) = reiny_launch::DeploymentClient::find(dir)
+        .map_err(|e| format!("Cannot inspect the project owner: {e:#}"))?
+    {
+        let _ = owner
+            .stop()
+            .map_err(|e| format!("Cannot stop the project before deleting it: {e:#}"))?;
     }
     std::fs::remove_dir_all(dir).map_err(|e| format!("Cannot delete: {e}"))?;
     println!("==> Deleted {}", dir.display());
@@ -434,12 +475,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_adjacent_module_root_launches_without_project_layout() {
+        let root = bundle("root", &[]);
+        let manifest = root.join(PROJECT_LAUNCH);
+        std::fs::write(&manifest, "version: 1\ndeployment: root\n").unwrap();
+        let entries = list_entries(&root);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, Path::new(PROJECT_LAUNCH));
+        let mut args = Vec::new();
+        assert_eq!(pick_config(&root, "", &mut args).unwrap(), manifest);
+        assert!(create_project(&root, &entries[0], "copy").is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn experimental_projects_keep_their_depth_when_listed_and_copied() {
         let root = bundle("experiment", &["daily"]);
         let parent = root.join("experiments/2026-09-11_probe/projects");
         let original = parent.join("robot_v1.1_probe");
         std::fs::create_dir_all(&original).unwrap();
-        std::fs::write(original.join(PROJECT_LAUNCH), "launch:\n").unwrap();
+        std::fs::write(
+            original.join(PROJECT_LAUNCH),
+            "version: 1\ndeployment: robot_v1.1_probe\n",
+        )
+        .unwrap();
         let entries = list_entries(&root);
         let i = find_entry(&entries, OsStr::new("robot_v1.1_probe"))
             .unwrap()
@@ -447,24 +506,23 @@ mod tests {
         assert_eq!(entries[i].path, original.join(PROJECT_LAUNCH));
         assert_eq!(
             entries[i].id,
-            Path::new("experiments/2026-09-11_probe/projects/robot_v1.1_probe/launch.yaml")
+            Path::new("experiments/2026-09-11_probe/projects/robot_v1.1_probe/main.yaml")
         );
         let copied = create_project(&root, &entries[i], "robot_v1.1_copy").unwrap();
         assert_eq!(copied, parent.join("robot_v1.1_copy"));
-        assert_eq!(
-            std::fs::read(copied.join(PROJECT_LAUNCH)).unwrap(),
-            b"launch:\n"
-        );
+        let manifest: reiny_launch::ModuleManifest =
+            serde_yaml::from_slice(&std::fs::read(copied.join(PROJECT_LAUNCH)).unwrap()).unwrap();
+        assert_eq!(manifest.deployment.as_deref(), Some("robot_v1.1_copy"));
         std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn same_named_projects_are_selected_by_bundle_relative_path() {
         let root = bundle("duplicate-names", &["robot_v1.1"]);
-        let id = "experiments/probe/projects/robot_v1.1/launch.yaml";
+        let id = "experiments/probe/projects/robot_v1.1/main.yaml";
         let path = root.join(id);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, "launch:\n").unwrap();
+        std::fs::write(&path, "version: 1\ndeployment: robot_v1.1\n").unwrap();
         let mut args = vec![id.into()];
         assert_eq!(pick_config(&root, "robot_v1.1", &mut args).unwrap(), path);
         assert!(args.is_empty());
@@ -496,7 +554,9 @@ mod tests {
             std::fs::create_dir_all(&pd).unwrap();
             std::fs::write(
                 pd.join(PROJECT_LAUNCH),
-                "launch:\n  sutera-launch: sutera.toml\n",
+                format!(
+                    "version: 1\ndeployment: {p}\nproviders:\n  process:\n    type: process\nrun:\n  provider: process\n  bin: probe\n  config: sutera.toml\n"
+                ),
             )
             .unwrap();
             std::fs::write(pd.join("sutera.toml"), "[controller]\nprogram = 'probe'\n").unwrap();
@@ -562,7 +622,7 @@ mod tests {
     }
 
     /// Projects are listed by directory name in order and can be looked up by name. A
-    /// directory without launch.yaml does not appear.
+    /// directory without main.yaml does not appear.
     #[test]
     fn projects_are_listed_by_directory_name() {
         let dir = bundle("list", &["b_sim", "a_sim"]);
@@ -581,20 +641,29 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Duplicating a project copies the directory verbatim; no character changes.
+    /// Duplication preserves inputs, replaces identity and excludes runtime state.
     #[test]
     fn a_project_is_duplicated_verbatim() {
         let dir = bundle("dup", &["src_proj"]);
         let es = list_entries(&dir);
+        let original = es[0].path.parent().unwrap();
+        std::fs::create_dir_all(original.join(".reiny")).unwrap();
+        std::fs::write(original.join(".reiny/control.json"), "owner credentials").unwrap();
         let made = create_project(&dir, &es[0], "copy_proj").unwrap();
 
-        for f in [PROJECT_LAUNCH, "sutera.toml"] {
-            assert_eq!(
-                std::fs::read_to_string(made.join(f)).unwrap(),
-                std::fs::read_to_string(es[0].path.parent().unwrap().join(f)).unwrap(),
-                "{f} was rewritten"
-            );
-        }
+        let manifest: reiny_launch::ModuleManifest =
+            serde_yaml::from_slice(&std::fs::read(made.join(PROJECT_LAUNCH)).unwrap()).unwrap();
+        assert_eq!(manifest.deployment.as_deref(), Some("copy_proj"));
+        assert_eq!(
+            manifest.run.as_ref().unwrap().config.as_deref(),
+            Some(Path::new("sutera.toml"))
+        );
+        assert_eq!(
+            std::fs::read(made.join("sutera.toml")).unwrap(),
+            std::fs::read(original.join("sutera.toml")).unwrap()
+        );
+        assert!(!made.join(".reiny").exists());
+        assert!(original.join(".reiny/control.json").is_file());
         // The same name cannot be created twice. Separators and .. are not allowed in names.
         assert!(create_project(&dir, &es[0], "copy_proj").is_err());
         assert!(create_project(&dir, &es[0], "../evil").is_err());

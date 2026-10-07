@@ -1,0 +1,5 @@
+version: 1
+run:
+  provider: process
+  bin: rancher-module-smoke
+  args: [--trace, ../stopped.txt]

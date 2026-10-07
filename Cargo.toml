@@ -5,7 +5,7 @@ edition = "2024"
 license = "Apache-2.0"
 authors = ["nop <noplab90@gmail.com>"]
 repository = "https://github.com/MechanicalGirlDev/rancher"
-description = "Bundle entry point: one argument-free executable that starts the launch config beside it"
+description = "Bundle entry point: select a main.yaml deployment and delegate lifecycle to Reiny"
 
 [[bin]]
 name = "rancher"
@@ -13,6 +13,8 @@ path = "src/main.rs"
 
 [dependencies]
 velopack = "1.2"
+reiny-launch = "0.7.0"
+serde_yaml = "0.9"
 
 [lints.rust]
 unsafe_code = "deny"
