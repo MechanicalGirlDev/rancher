@@ -3,11 +3,11 @@ request_timeout_ms = 500
 real_hardware = false
 
 [controller]
-program = "../../bin/sutera-demo-diffdrive-controller"
+program = "@bin/sutera-demo-diffdrive-controller"
 config = { left_rad_s = 1.0, right_rad_s = 0.8 }
 
 [hal]
-program = "../../bin/sutera-demo-diffdrive-hal"
+program = "@bin/sutera-demo-diffdrive-hal"
 config = { trace = "diffdrive-stop.txt" }
 
 [[stop]]

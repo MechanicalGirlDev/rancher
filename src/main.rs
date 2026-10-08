@@ -478,7 +478,7 @@ mod tests {
     fn an_adjacent_module_root_launches_without_project_layout() {
         let root = bundle("root", &[]);
         let manifest = root.join(PROJECT_LAUNCH);
-        std::fs::write(&manifest, "version: 1\ndeployment: root\n").unwrap();
+        std::fs::write(&manifest, "version: 2\ndeployment: root\n").unwrap();
         let entries = list_entries(&root);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].id, Path::new(PROJECT_LAUNCH));
@@ -496,7 +496,7 @@ mod tests {
         std::fs::create_dir_all(&original).unwrap();
         std::fs::write(
             original.join(PROJECT_LAUNCH),
-            "version: 1\ndeployment: robot_v1.1_probe\n",
+            "version: 2\ndeployment: robot_v1.1_probe\n",
         )
         .unwrap();
         let entries = list_entries(&root);
@@ -522,7 +522,7 @@ mod tests {
         let id = "experiments/probe/projects/robot_v1.1/main.yaml";
         let path = root.join(id);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, "version: 1\ndeployment: robot_v1.1\n").unwrap();
+        std::fs::write(&path, "version: 2\ndeployment: robot_v1.1\n").unwrap();
         let mut args = vec![id.into()];
         assert_eq!(pick_config(&root, "robot_v1.1", &mut args).unwrap(), path);
         assert!(args.is_empty());
@@ -555,7 +555,7 @@ mod tests {
             std::fs::write(
                 pd.join(PROJECT_LAUNCH),
                 format!(
-                    "version: 1\ndeployment: {p}\nproviders:\n  process:\n    type: process\nrun:\n  provider: process\n  bin: probe\n  config: sutera.toml\n"
+                    "version: 2\ndeployment: {p}\nproviders:\n  process:\n    type: process\nrun:\n  provider: process\n  bin: probe\n  config: sutera.toml\n"
                 ),
             )
             .unwrap();
@@ -653,6 +653,7 @@ mod tests {
 
         let manifest: reiny_launch::ModuleManifest =
             serde_yaml::from_slice(&std::fs::read(made.join(PROJECT_LAUNCH)).unwrap()).unwrap();
+        assert_eq!(manifest.version, 2);
         assert_eq!(manifest.deployment.as_deref(), Some("copy_proj"));
         assert_eq!(
             manifest.run.as_ref().unwrap().config.as_deref(),

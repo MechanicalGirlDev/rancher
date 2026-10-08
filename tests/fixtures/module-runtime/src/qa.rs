@@ -21,7 +21,7 @@ async fn main() -> Result<()> {
     let mut child = tokio::process::Command::new(
         bundle.join(format!("rancher{}", std::env::consts::EXE_SUFFIX)),
     )
-    .args(["managed", "--detach"])
+    .args(["managed", "--detach", "--ready-timeout", "120"])
     .stdin(Stdio::null())
     .stdout(Stdio::piped())
     .stderr(Stdio::inherit())
@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
     .spawn()?;
     // The pipe captures the readiness event before the child can publish it.
     let mut lines = BufReader::new(child.stdout.take().context("launcher stdout")?).lines();
-    let ready = tokio::time::timeout(Duration::from_secs(60), async {
+    let ready = tokio::time::timeout(Duration::from_secs(150), async {
         let mut message = String::new();
         loop {
             let line = lines

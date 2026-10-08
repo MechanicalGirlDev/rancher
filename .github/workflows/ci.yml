@@ -7,6 +7,8 @@ on:
 
 jobs:
   ci:
+    env:
+      RUST_TEST_THREADS: "2"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,14 +28,14 @@ jobs:
         run: |
           set -euo pipefail
           cargo build --locked
-          cargo install reiny-cli --version 0.7.0 --locked
+          cargo install reiny-cli --version 0.8.0 --locked
           cargo install --path tests/fixtures/module-runtime --locked --debug --bins --root out/bundle
           mkdir -p out/bundle/projects/managed/worker
           cp target/debug/rancher out/bundle/rancher
           cp "$(command -v reiny)" out/bundle/reiny
           cp tests/fixtures/module-runtime/main.yaml out/bundle/projects/managed/
           cp tests/fixtures/module-runtime/worker/main.yaml out/bundle/projects/managed/worker/
-      - name: Real Reiny 0.7 readiness and cooperative cleanup
+      - name: Real Reiny 0.8 readiness and cooperative cleanup
         run: |
           set -euo pipefail
           out/bundle/bin/rancher-module-qa out/bundle | tee out/launcher-smoke.log
